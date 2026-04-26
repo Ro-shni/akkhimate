@@ -8,7 +8,7 @@ export async function askQuestion(
   modules: LearningModule[],
   chatHistory: { role: 'user' | 'model'; parts: { text: string }[] }[] = []
 ): Promise<string> {
-  const model = "gemini-3-flash-preview";
+  const model = "gemini-2.0-flash";
   
   // Guard: Ensure we only send valid parts
   const validModules = modules.filter(mod => mod.content && mod.content.length > 50);
@@ -70,7 +70,7 @@ export async function generateStudyArtifact(
   extraContext?: string,
   chatHistory?: { role: 'user' | 'model'; parts: { text: string }[] }[]
 ): Promise<string> {
-  const model = "gemini-3-flash-preview";
+  const model = "gemini-2.0-flash";
   
   const validModules = modules.filter(mod => mod.content && mod.content.length > 50);
   const moduleMetadata = validModules.map(mod => `[ID: ${mod.id}, Name: ${mod.name}]`).join(', ');
