@@ -1,0 +1,82 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Playfair Display", ui-serif, Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-brand-teal: #14b8a6;
+  --color-brand-teal-dark: #0d9488;
+  --color-bg-main: #0A0B0E;
+  --color-bg-side: #11141A;
+  --color-bg-card: #1A1D23;
+  --color-border-subtle: rgba(255, 255, 255, 0.1);
+}
+
+@layer base {
+  body {
+    @apply bg-bg-main text-slate-200 antialiased font-sans;
+  }
+}
+
+.markdown-body {
+  @apply text-slate-300 leading-relaxed text-sm;
+}
+
+.markdown-body h1 { @apply text-lg font-bold text-white mt-4 mb-2; }
+.markdown-body h2 { @apply text-base font-bold text-white mt-3 mb-2; }
+.markdown-body h3 { @apply text-sm font-bold text-white mt-2 mb-1; }
+.markdown-body p { @apply mb-3; }
+.markdown-body ul { @apply list-disc list-inside mb-3 space-y-1; }
+.markdown-body ol { @apply list-decimal list-inside mb-3 space-y-1; }
+.markdown-body code { @apply bg-white/10 px-1 py-0.5 rounded font-mono text-[11px]; }
+.markdown-body pre { @apply bg-black/40 p-3 rounded-lg overflow-x-auto mb-3 border border-white/5; }
+.markdown-body table { @apply w-full border-collapse mb-3 text-xs; }
+.markdown-body th { @apply bg-white/5 p-2 text-left border border-white/10; }
+.markdown-body td { @apply p-2 border border-white/5; }
+.markdown-body blockquote { @apply border-l-2 border-brand-teal pl-3 italic text-slate-400 mb-3; }
+
+.academic-view {
+  @apply max-w-none;
+}
+
+.academic-view h1 {
+  @apply text-2xl font-bold border-b border-brand-teal/20 pb-4 mb-8 text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400;
+}
+
+.academic-view h2 {
+  @apply text-lg font-bold text-brand-teal mt-10 mb-4 flex items-center gap-2;
+}
+
+.academic-view h3 {
+  @apply text-sm font-bold text-indigo-300 mt-6 mb-3 uppercase tracking-wider;
+}
+
+.academic-view p {
+  @apply text-slate-400 leading-relaxed text-[13px] mb-4;
+}
+
+.academic-view ul, .academic-view ol {
+  @apply mb-6 space-y-2;
+}
+
+.academic-view li {
+  @apply text-slate-400 text-[13px];
+}
+
+.academic-view table {
+  @apply rounded-xl overflow-hidden border-separate border-spacing-0 shadow-lg my-6;
+}
+
+.academic-view th {
+  @apply bg-brand-teal/10 text-brand-teal font-bold py-3 px-4 border-b border-white/10;
+}
+
+.academic-view td {
+  @apply py-3 px-4 bg-white/[0.02] border-b border-white/5;
+}
+
+.academic-view hr {
+  @apply border-white/5 my-10;
+}

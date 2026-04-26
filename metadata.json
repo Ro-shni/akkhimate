@@ -1,0 +1,6 @@
+{
+  "name": "Lumina Study AI",
+  "description": "An AI-powered study companion that processes learning modules, PDFs, and handwritten notes to provide Q&A, roadmaps, and practice tests.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["AI Document Retrieval", "Handwriting OCR", "Study Roadmapping"]
+}
