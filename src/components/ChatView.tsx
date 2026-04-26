@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Send, User, Bot, Loader2, BookOpen } from 'lucide-react';
-import { ChatMessage, LearningModule } from '../types';
+import { ChatMessage, LearningModule, ModelProvider } from '../types';
 import { askQuestion } from '../services/gemini';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -13,9 +13,10 @@ interface ChatViewProps {
   messages: ChatMessage[];
   onUpdateMessages: (messages: ChatMessage[]) => void;
   onMessage?: () => void;
+  modelProvider: ModelProvider;
 }
 
-export function ChatView({ modules, messages, onUpdateMessages, onMessage }: ChatViewProps) {
+export function ChatView({ modules, messages, onUpdateMessages, onMessage, modelProvider }: ChatViewProps) {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -58,7 +59,7 @@ export function ChatView({ modules, messages, onUpdateMessages, onMessage }: Cha
         parts: [{ text: msg.content }]
       }));
 
-      const answer = await askQuestion(input, modules, history);
+      const answer = await askQuestion(input, modules, history, modelProvider);
       
       const assistantMsg: ChatMessage = {
         id: `bot-${Date.now()}`,

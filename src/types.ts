@@ -59,3 +59,5 @@ export interface DailySummary {
   date: string;
   content: string;
 }
+
+export type ModelProvider = 'qwen' | 'gemini';

@@ -1,7 +1,9 @@
-import { LearningModule } from "../types";
+import { LearningModule, ModelProvider } from "../types";
 
-const QWEN_API_URL = process.env.VITE_QWEN_API_URL || "http://localhost:11434/api/generate";
-const QWEN_MODEL = "qwen3.5:9b";
+const QWEN_API_URL = (import.meta as any).env?.VITE_QWEN_API_URL || "http://localhost:11434/api/generate";
+const QWEN_MODEL = (import.meta as any).env?.VITE_QWEN_MODEL || "qwen3.5:9b";
+const GEMINI_API_KEY = (import.meta as any).env?.VITE_GEMINI_API_KEY || "";
+const GEMINI_MODEL = "gemini-2.0-flash";
 
 interface QwenRequest {
   model: string;
@@ -17,46 +19,82 @@ interface QwenResponse {
 }
 
 async function queryQwen(prompt: string, temperature: number = 0.7): Promise<string> {
-  try {
-    const response = await fetch(QWEN_API_URL, {
+  const response = await fetch(QWEN_API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: QWEN_MODEL,
+      prompt,
+      stream: false,
+      temperature,
+      top_p: 0.95,
+    } as QwenRequest),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Qwen API error: ${response.status} ${response.statusText}`);
+  }
+
+  const data = (await response.json()) as QwenResponse;
+  return data.response || "I'm sorry, I couldn't process that request.";
+}
+
+async function queryGemini(prompt: string, temperature: number = 0.7): Promise<string> {
+  if (!GEMINI_API_KEY) {
+    throw new Error("Gemini API key not configured. Add VITE_GEMINI_API_KEY to your .env file.");
+  }
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+    {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: QWEN_MODEL,
-        prompt,
-        stream: false,
-        temperature,
-        top_p: 0.95,
-      } as QwenRequest),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Qwen API error: ${response.status} ${response.statusText}`);
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature,
+          topP: 0.95,
+          maxOutputTokens: 8192,
+        },
+      }),
     }
+  );
 
-    const data = (await response.json()) as QwenResponse;
-    return data.response || "I'm sorry, I couldn't process that request.";
-  } catch (error: any) {
-    console.error("Qwen API error:", error);
-    if (error.message.includes("fetch")) {
-      return "Error: Qwen model is not running. Please start Qwen locally using: ollama run qwen3.5:9b";
-    }
-    throw error;
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(
+      `Gemini API error: ${response.status} ${(errorData as any)?.error?.message || response.statusText}`
+    );
   }
+
+  const data = await response.json();
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) {
+    throw new Error("Empty response from Gemini API.");
+  }
+  return text;
+}
+
+async function queryModel(prompt: string, model: ModelProvider, temperature: number = 0.7): Promise<string> {
+  if (model === "gemini") {
+    return queryGemini(prompt, temperature);
+  }
+  return queryQwen(prompt, temperature);
 }
 
 export async function askQuestion(
   question: string,
   modules: LearningModule[],
-  chatHistory: { role: "user" | "model"; parts: { text: string }[] }[] = []
+  chatHistory: { role: "user" | "model"; parts: { text: string }[] }[] = [],
+  model: ModelProvider = "qwen"
 ): Promise<string> {
-  // Guard: Ensure we only use valid modules
   const validModules = modules.filter((mod) => mod.content && mod.content.length > 50);
   const moduleMetadata = validModules.map((mod) => `[ID: ${mod.id}, Name: ${mod.name}]`).join(", ");
 
-  // Format chat history
   const chatContext =
     chatHistory.length > 0
       ? `\nRecent Chat History:\n${chatHistory
@@ -65,7 +103,6 @@ export async function askQuestion(
           .join("\n")}\n`
       : "";
 
-  // Format module content (truncate to avoid token limits)
   const moduleContext =
     validModules.length > 0
       ? `\nModule Context (${moduleMetadata}):\n${validModules
@@ -84,14 +121,15 @@ When answering:
 
   const prompt = `${systemPrompt}${moduleContext}${chatContext}\nStudent Question: ${question}\n\nTutor Response:`;
 
-  return await queryQwen(prompt, 0.7);
+  return await queryModel(prompt, model, 0.7);
 }
 
 export async function generateStudyArtifact(
   type: "roadmap" | "test" | "schedule" | "flashcards" | "summary",
   modules: LearningModule[],
   extraContext?: string,
-  chatHistory?: { role: "user" | "model"; parts: { text: string }[] }[]
+  chatHistory?: { role: "user" | "model"; parts: { text: string }[] }[],
+  model: ModelProvider = "qwen"
 ): Promise<string> {
   const validModules = modules.filter((mod) => mod.content && mod.content.length > 50);
   const moduleMetadata = validModules.map((mod) => `[ID: ${mod.id}, Name: ${mod.name}]`).join(", ");
@@ -154,5 +192,5 @@ ${moduleContext}${chatSnippet}${
 
 Please provide a comprehensive and detailed response:`;
 
-  return await queryQwen(prompt, type === "summary" ? 0.4 : 0.7);
+  return await queryModel(prompt, model, type === "summary" ? 0.4 : 0.7);
 }

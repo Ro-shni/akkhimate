@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Map, GraduationCap, Calendar, Sparkles, Loader2, Download, Copy, Check, BrainCircuit, Filter, FileText } from 'lucide-react';
-import { LearningModule, ViewType } from '../types';
+import { LearningModule, ViewType, ModelProvider } from '../types';
 import { generateStudyArtifact } from '../services/gemini';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -11,9 +11,10 @@ import { Mermaid } from './Mermaid';
 interface TutorViewProps {
   modules: LearningModule[];
   activeView: ViewType;
+  modelProvider: ModelProvider;
 }
 
-export function TutorView({ modules, activeView }: TutorViewProps) {
+export function TutorView({ modules, activeView, modelProvider }: TutorViewProps) {
   const initialTab = (['roadmap', 'tests', 'schedule'].includes(activeView) ? activeView : 'roadmap') as Exclude<ViewType, 'chat' | 'calendar' | 'flashcards'>;
   const [activeTab, setActiveTab] = useState(initialTab);
   const [selectedModuleIds, setSelectedModuleIds] = useState<string[]>(modules.map(m => m.id));
@@ -36,6 +37,7 @@ export function TutorView({ modules, activeView }: TutorViewProps) {
 
   const [results, setResults] = useState<Partial<Record<Exclude<ViewType, 'chat'>, string>>>({});
   const [loading, setLoading] = useState<Partial<Record<Exclude<ViewType, 'chat'>, boolean>>>({});
+  const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   const tabs = [
@@ -45,7 +47,7 @@ export function TutorView({ modules, activeView }: TutorViewProps) {
   ];
 
   const toggleModule = (id: string) => {
-    setSelectedModuleIds(prev => 
+    setSelectedModuleIds(prev =>
       prev.includes(id) ? prev.filter(mid => mid !== id) : [...prev, id]
     );
   };
@@ -53,14 +55,16 @@ export function TutorView({ modules, activeView }: TutorViewProps) {
   const handleGenerate = async (type: Exclude<ViewType, 'chat'>) => {
     const activeModules = modules.filter(m => selectedModuleIds.includes(m.id));
     if (activeModules.length === 0) return;
-    
+
     setLoading(prev => ({ ...prev, [type]: true }));
+    setError(null);
     try {
       const artifactType = type === 'roadmap' ? 'roadmap' : type === 'tests' ? 'test' : 'schedule';
-      const response = await generateStudyArtifact(artifactType, activeModules);
+      const response = await generateStudyArtifact(artifactType, activeModules, undefined, undefined, modelProvider);
       setResults(prev => ({ ...prev, [type]: response }));
-    } catch (error) {
-      console.error(error);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'An unexpected error occurred';
+      setError(message);
     } finally {
       setLoading(prev => ({ ...prev, [type]: false }));
     }
@@ -88,8 +92,8 @@ export function TutorView({ modules, activeView }: TutorViewProps) {
                 onClick={() => setActiveTab(tab.id)}
                 className={cn(
                   "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm",
-                  activeTab === tab.id 
-                    ? "bg-white/5 border border-white/10 text-white shadow-xl" 
+                  activeTab === tab.id
+                    ? "bg-white/5 border border-white/10 text-white shadow-xl"
                     : "text-slate-500 hover:text-slate-300 hover:bg-white/5"
                 )}
               >
@@ -165,7 +169,7 @@ export function TutorView({ modules, activeView }: TutorViewProps) {
           </div>
           <div className="flex gap-3">
             {results[activeTab] && !loading[activeTab] && (
-              <button 
+              <button
                 onClick={handleCopy}
                 className="p-2.5 hover:bg-white/10 rounded-xl transition-all text-slate-400 hover:text-white border border-transparent hover:border-white/10"
                 title="Copy to clipboard"
@@ -173,7 +177,7 @@ export function TutorView({ modules, activeView }: TutorViewProps) {
                 {copied ? <Check size={16} className="text-green-400" /> : <Copy size={16} />}
               </button>
             )}
-            <button 
+            <button
               onClick={() => handleGenerate(activeTab)}
               disabled={selectedModuleIds.length === 0 || loading[activeTab]}
               className="px-5 py-2.5 bg-brand-teal border border-brand-teal/50 text-black rounded-xl text-[11px] font-bold uppercase tracking-widest hover:bg-brand-teal/90 transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-[0_0_20px_rgba(20,184,166,0.2)]"
@@ -190,7 +194,26 @@ export function TutorView({ modules, activeView }: TutorViewProps) {
 
         <div className="flex-1 overflow-y-auto p-10 custom-scrollbar relative">
           <AnimatePresence mode="wait">
-            {!results[activeTab] && !loading[activeTab] ? (
+            {error && !loading[activeTab] ? (
+              <motion.div
+                key="error"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 1.05 }}
+                className="h-full flex flex-col items-center justify-center text-center p-12"
+              >
+                <div className="w-20 h-20 bg-red-500/10 rounded-3xl flex items-center justify-center mb-8 border border-red-500/20">
+                  <span className="text-3xl">!</span>
+                </div>
+                <h4 className="text-xl font-bold text-white mb-3">Error</h4>
+                <p className="text-sm text-red-400 max-w-md leading-relaxed mb-4">{error}</p>
+                <p className="text-xs text-slate-500 max-w-sm">
+                  {modelProvider === 'qwen'
+                    ? 'Make sure Ollama is running (./start.sh) and the Qwen model is pulled.'
+                    : 'Check that VITE_GEMINI_API_KEY is set in your .env file.'}
+                </p>
+              </motion.div>
+            ) : !results[activeTab] && !loading[activeTab] ? (
               <motion.div
                 key="empty"
                 initial={{ opacity: 0, scale: 0.95 }}
@@ -216,7 +239,7 @@ export function TutorView({ modules, activeView }: TutorViewProps) {
                 </div>
               </motion.div>
             ) : loading[activeTab] ? (
-              <motion.div 
+              <motion.div
                 key="loading"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -239,7 +262,7 @@ export function TutorView({ modules, activeView }: TutorViewProps) {
                 className="space-y-8"
               >
                 <div className="markdown-body academic-view">
-                  <Markdown 
+                  <Markdown
                     remarkPlugins={[remarkGfm]}
                     components={{
                       code({ node, inline, className, children, ...props }: any) {

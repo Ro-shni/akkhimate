@@ -9,7 +9,7 @@ import { ChatView } from './components/ChatView';
 import { TutorView } from './components/TutorView';
 import { CalendarView } from './components/CalendarView';
 import { FlashcardView } from './components/FlashcardView';
-import { LearningModule, ViewType, Subject, StudyLog, Flashcard, DailySummary, ChatSession, ChatMessage } from './types';
+import { LearningModule, ViewType, Subject, StudyLog, Flashcard, DailySummary, ChatSession, ChatMessage, ModelProvider } from './types';
 import { Sparkles, BrainCircuit, LayoutGrid, Info } from 'lucide-react';
 import { generateStudyArtifact } from './services/gemini';
 
@@ -19,38 +19,33 @@ const DEFAULT_SUBJECTS: Subject[] = [
   { id: '3', name: 'Biochemistry', color: '#f59e0b', createdAt: Date.now() },
 ];
 
+function loadFromStorage<T>(key: string, fallback: T): T {
+  try {
+    const saved = localStorage.getItem(key);
+    return saved ? JSON.parse(saved) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export default function App() {
-  const [subjects, setSubjects] = useState<Subject[]>(DEFAULT_SUBJECTS);
+  const [subjects, setSubjects] = useState<Subject[]>(() => loadFromStorage('study_subjects', DEFAULT_SUBJECTS));
   const [activeSubjectId, setActiveSubjectId] = useState<string>(DEFAULT_SUBJECTS[0].id);
-  const [modules, setModules] = useState<LearningModule[]>([]);
+  const [modules, setModules] = useState<LearningModule[]>(() => loadFromStorage('study_modules', []));
   const [activeView, setActiveView] = useState<ViewType>('chat');
-  
+
   // Chat States
-  const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
+  const [chatSessions, setChatSessions] = useState<ChatSession[]>(() => loadFromStorage('study_chats', []));
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
 
+  // Model selection
+  const [modelProvider, setModelProvider] = useState<ModelProvider>(() => loadFromStorage('study_model', 'qwen'));
+
   // New States
-  const [logs, setLogs] = useState<StudyLog[]>([]);
-  const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
-  const [summaries, setSummaries] = useState<DailySummary[]>([]);
+  const [logs, setLogs] = useState<StudyLog[]>(() => loadFromStorage('study_logs', []));
+  const [flashcards, setFlashcards] = useState<Flashcard[]>(() => loadFromStorage('study_cards', []));
+  const [summaries, setSummaries] = useState<DailySummary[]>(() => loadFromStorage('study_summaries', []));
   const [isGenerating, setIsGenerating] = useState(false);
-
-  // Persistence: Load from localStorage
-  useEffect(() => {
-    const savedSubjects = localStorage.getItem('study_subjects');
-    const savedModules = localStorage.getItem('study_modules');
-    const savedLogs = localStorage.getItem('study_logs');
-    const savedCards = localStorage.getItem('study_cards');
-    const savedSummaries = localStorage.getItem('study_summaries');
-    const savedChats = localStorage.getItem('study_chats');
-
-    if (savedSubjects) setSubjects(JSON.parse(savedSubjects));
-    if (savedModules) setModules(JSON.parse(savedModules));
-    if (savedLogs) setLogs(JSON.parse(savedLogs));
-    if (savedCards) setFlashcards(JSON.parse(savedCards));
-    if (savedSummaries) setSummaries(JSON.parse(savedSummaries));
-    if (savedChats) setChatSessions(JSON.parse(savedChats));
-  }, []);
 
   // Persistence: Save to localStorage
   useEffect(() => { localStorage.setItem('study_subjects', JSON.stringify(subjects)); }, [subjects]);
@@ -59,6 +54,7 @@ export default function App() {
   useEffect(() => { localStorage.setItem('study_cards', JSON.stringify(flashcards)); }, [flashcards]);
   useEffect(() => { localStorage.setItem('study_summaries', JSON.stringify(summaries)); }, [summaries]);
   useEffect(() => { localStorage.setItem('study_chats', JSON.stringify(chatSessions)); }, [chatSessions]);
+  useEffect(() => { localStorage.setItem('study_model', JSON.stringify(modelProvider)); }, [modelProvider]);
 
   // Initialize a chat session if none exists for the subject
   useEffect(() => {
@@ -80,12 +76,12 @@ export default function App() {
     }
   }, [activeSubjectId]);
 
-  const activeChat = useMemo(() => 
+  const activeChat = useMemo(() =>
     chatSessions.find(c => c.id === activeChatId),
   [chatSessions, activeChatId]);
 
   const updateChatMessages = (chatId: string, messages: ChatMessage[]) => {
-    setChatSessions(prev => prev.map(session => 
+    setChatSessions(prev => prev.map(session =>
       session.id === chatId ? { ...session, messages } : session
     ));
   };
@@ -111,11 +107,11 @@ export default function App() {
     }
   };
 
-  const activeSubject = useMemo(() => 
+  const activeSubject = useMemo(() =>
     subjects.find(s => s.id === activeSubjectId) || subjects[0],
   [subjects, activeSubjectId]);
 
-  const activeModules = useMemo(() => 
+  const activeModules = useMemo(() =>
     modules.filter(m => m.subjectId === activeSubjectId),
   [modules, activeSubjectId]);
 
@@ -144,7 +140,7 @@ export default function App() {
     if (activeModules.length === 0) return;
     setIsGenerating(true);
     try {
-      const result = await generateStudyArtifact('flashcards', activeModules);
+      const result = await generateStudyArtifact('flashcards', activeModules, undefined, undefined, modelProvider);
       const lines = result.split('\n').filter(l => l.includes('Q:') && l.includes('A:'));
       const newCards: Flashcard[] = lines.map(line => {
         const [qPart, aPart] = line.split('|');
@@ -169,19 +165,18 @@ export default function App() {
     const dayLogs = logs.filter(l => l.date === date).map(l => `${l.action}: ${l.details}`).join(', ');
     if (!dayLogs) return;
     setIsGenerating(true);
-    
-    // Gather all messages from all chat sessions for this subject to provide context
+
     const subjectMessages = chatSessions
       .filter(s => s.subjectId === activeSubjectId)
       .flatMap(s => s.messages)
-      .slice(-15) // last 15 messages for context
+      .slice(-15)
       .map(m => ({
         role: m.role === 'user' ? 'user' as const : 'model' as const,
         parts: [{ text: m.content }]
       }));
 
     try {
-      const content = await generateStudyArtifact('summary', activeModules, dayLogs, subjectMessages);
+      const content = await generateStudyArtifact('summary', activeModules, dayLogs, subjectMessages, modelProvider);
       setSummaries(prev => [{ id: Math.random().toString(36).substr(2, 9), date, content }, ...prev]);
       addLog('summary', `Created daily wrap-up`);
     } catch (error) {
@@ -204,14 +199,14 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-screen bg-bg-main text-slate-200 overflow-hidden font-sans">
-      <Sidebar 
+      <Sidebar
         subjects={subjects}
         activeSubjectId={activeSubjectId}
         onSubjectSelect={setActiveSubjectId}
         onAddSubject={addSubject}
-        modules={activeModules} 
-        onUpload={addModule} 
-        onRemove={removeModule} 
+        modules={activeModules}
+        onUpload={addModule}
+        onRemove={removeModule}
         activeView={activeView}
         onViewChange={setActiveView}
         chatSessions={chatSessions.filter(c => c.subjectId === activeSubjectId)}
@@ -230,6 +225,29 @@ export default function App() {
             </span>
           </div>
           <div className="flex gap-4 items-center">
+            {/* Model Switcher */}
+            <div className="flex items-center bg-white/5 rounded-xl border border-white/10 p-0.5">
+              <button
+                onClick={() => setModelProvider('qwen')}
+                className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${
+                  modelProvider === 'qwen'
+                    ? 'bg-brand-teal text-black shadow-lg'
+                    : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                Qwen 3.5
+              </button>
+              <button
+                onClick={() => setModelProvider('gemini')}
+                className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${
+                  modelProvider === 'gemini'
+                    ? 'bg-indigo-500 text-white shadow-lg'
+                    : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                Gemini
+              </button>
+            </div>
             <div className="text-[10px] font-mono text-slate-500 uppercase tracking-widest hidden sm:block">
               {activeModules.length} Modules in Context
             </div>
@@ -241,33 +259,35 @@ export default function App() {
 
         <div className="flex-1 min-h-0 bg-transparent">
           {activeView === 'chat' && activeChat && (
-            <ChatView 
-               modules={activeModules} 
+            <ChatView
+               modules={activeModules}
                messages={activeChat.messages}
                onUpdateMessages={(msgs) => updateChatMessages(activeChat.id, msgs)}
-               key={`chat-${activeChat.id}`} 
+               key={`chat-${activeChat.id}`}
                onMessage={() => addLog('chat', 'Asked a question')}
+               modelProvider={modelProvider}
             />
           )}
           {['roadmap', 'tests', 'schedule'].includes(activeView) && (
-            <TutorView 
-              modules={activeModules} 
-              activeView={activeView} 
-              key={`tutor-${activeSubjectId}`} 
+            <TutorView
+              modules={activeModules}
+              activeView={activeView}
+              key={`tutor-${activeSubjectId}`}
+              modelProvider={modelProvider}
             />
           )}
           {activeView === 'calendar' && (
-            <CalendarView 
-              logs={logs} 
-              summaries={summaries} 
-              onGenerateSummary={generateSummary} 
+            <CalendarView
+              logs={logs}
+              summaries={summaries}
+              onGenerateSummary={generateSummary}
             />
           )}
           {activeView === 'flashcards' && (
-            <FlashcardView 
-              flashcards={flashcards} 
-              activeSubjectId={activeSubjectId} 
-              onGenerate={generateFlashcards} 
+            <FlashcardView
+              flashcards={flashcards}
+              activeSubjectId={activeSubjectId}
+              onGenerate={generateFlashcards}
               isLoading={isGenerating}
             />
           )}
@@ -276,4 +296,3 @@ export default function App() {
     </div>
   );
 }
-
