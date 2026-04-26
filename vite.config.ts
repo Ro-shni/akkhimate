@@ -5,11 +5,10 @@ import {defineConfig, loadEnv} from 'vite';
 
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
-  
   return {
     plugins: [react(), tailwindcss()],
     define: {
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.VITE_GOOGLE_API_KEY || env.GEMINI_API_KEY),
+      'process.env.VITE_QWEN_API_URL': JSON.stringify(env.VITE_QWEN_API_URL || 'http://localhost:11434/api/generate'),
     },
     resolve: {
       alias: {
